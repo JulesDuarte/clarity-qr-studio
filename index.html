@@ -349,7 +349,7 @@ input[type=text]:focus,input[type=url]:focus{border-color:var(--green);backgroun
     </div>
     <div class="field-group">
       <span class="lbl">Supabase Anon Key</span>
-      <input class="inp mono" id="sb-key" type="password" placeholder="sb_publishable_..." autocomplete="off">
+      <input class="inp mono" id="sb-key" type="password" placeholder="eyJhbGci..." autocomplete="off">
     </div>
     <div class="field-group">
       <span class="lbl">Your Vercel Base URL</span>
@@ -428,6 +428,7 @@ input[type=text]:focus,input[type=url]:focus{border-color:var(--green);backgroun
 </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
 <script>
 var QRCode=(function(){
 "use strict";
@@ -964,7 +965,6 @@ function updateSlugPreview(){
   var base = document.getElementById('vercel-base').value.trim() || s.vercelBase || 'https://clarity-redirect-eight.vercel.app';
   var slug = document.getElementById('qr-slug').value.trim();
   document.getElementById('slug-preview').textContent = slug ? buildPublicQrUrl(base, slug) : '—';
-
 }
 
 function saveCredentials(){
@@ -1049,7 +1049,7 @@ async function loadQRCodes(){
           '<div class="qr-card-dest">→ ' + escHtml(qr.destination_url) + '</div>' +
         '</div>' +
         '<div class="qr-card-scans" style="cursor:pointer;" title="Click to see scans">' +
-          '<span id="scancount-' + qr.id + '">— scans</span>' +
+          '<span id="scancount-' + qr.id + '">Loading...</span>' +
         '</div>' +
       '</div>' +
       '<div class="scan-list" id="scanlist-' + qr.id + '"></div>' +
@@ -1076,16 +1076,38 @@ async function loadQRCodes(){
     card.querySelector('.card-btn.del').addEventListener('click', function(){
       deleteQR(qr.id);
     });
-  });
 
-  data.forEach(function(qr){
+    // Load count immediately after card is created
     loadScanCount(qr.id, qr.slug);
   });
 }
 
 async function loadScanCount(id, slug){
-  var data=await sbFetch('clarity_scans?qr_slug=eq.'+encodeURIComponent(slug)+'&select=id',{});
-  if(data) document.getElementById('scancount-'+id).textContent=(data.length)+' scan'+(data.length===1?'':'s');
+  try {
+    // Try both possible table structures
+    var data = await sbFetch('clarity_scans?qr_slug=eq.'+encodeURIComponent(slug)+'&select=id',{});
+    
+    if(!data) {
+      // Fallback: try with qr_code_id if qr_slug doesn't work
+      var qrData = await sbFetch('clarity_qrcodes?slug=eq.'+encodeURIComponent(slug)+'&select=id',{});
+      if(qrData && qrData.length > 0){
+        data = await sbFetch('clarity_scans?qr_code_id=eq.'+qrData[0].id+'&select=id',{});
+      }
+    }
+    
+    if(data) {
+      var count = data.length;
+      var el = document.getElementById('scancount-'+id);
+      if(el) el.textContent = count + ' scan' + (count === 1 ? '' : 's');
+    } else {
+      var el = document.getElementById('scancount-'+id);
+      if(el) el.textContent = '0 scans';
+    }
+  } catch(e){
+    console.error('Error loading scan count:', e);
+    var el = document.getElementById('scancount-'+id);
+    if(el) el.textContent = '— scans';
+  }
 }
 
 async function toggleScans(id, slug){
@@ -1093,12 +1115,28 @@ async function toggleScans(id, slug){
   if(el.classList.contains('open')){el.classList.remove('open');return;}
   el.innerHTML='<div style="font-size:.7rem;color:var(--muted)">Loading…</div>';
   el.classList.add('open');
-  var data=await sbFetch('clarity_scans?qr_slug=eq.'+encodeURIComponent(slug)+'&order=scanned_at.desc&limit=20',{});
-  if(!data||data.length===0){el.innerHTML='<div class="scan-item">No scans yet.</div>';return;}
-  el.innerHTML=data.map(function(r){
-    var d=new Date(r.scanned_at);
-    return '<div class="scan-item">'+d.toLocaleDateString('ro-RO',{day:'2-digit',month:'short',year:'numeric'})+' at '+d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})+'</div>';
-  }).join('');
+  
+  try {
+    var data=await sbFetch('clarity_scans?qr_slug=eq.'+encodeURIComponent(slug)+'&order=scanned_at.desc&limit=20',{});
+    
+    if(!data) {
+      // Fallback: try with qr_code_id
+      var qrData = await sbFetch('clarity_qrcodes?slug=eq.'+encodeURIComponent(slug)+'&select=id',{});
+      if(qrData && qrData.length > 0){
+        data = await sbFetch('clarity_scans?qr_code_id=eq.'+qrData[0].id+'&order=scanned_at.desc&limit=20',{});
+      }
+    }
+    
+    if(!data||data.length===0){el.innerHTML='<div class="scan-item">No scans yet.</div>';return;}
+    
+    el.innerHTML=data.map(function(r){
+      var d=new Date(r.scanned_at);
+      return '<div class="scan-item">'+d.toLocaleDateString('ro-RO',{day:'2-digit',month:'short',year:'numeric'})+' at '+d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})+'</div>';
+    }).join('');
+  } catch(e){
+    console.error('Error loading scans:', e);
+    el.innerHTML='<div class="scan-item">Error loading scans.</div>';
+  }
 }
 
 // ── Use QR in Design tab ──
@@ -1176,7 +1214,6 @@ function buildPublicQrUrl(base, slug){
   var cleanBase = normalizeBaseUrl(base);
   var cleanSlug = String(slug || '').trim().replace(/^\/+/,'').replace(/\/+$/,'');
   return cleanBase && cleanSlug ? cleanBase + '/' + cleanSlug : cleanBase || '—';
-  
 }
 
 function showStatus(id,msg,type){
@@ -1187,6 +1224,9 @@ function showStatus(id,msg,type){
   if(type==='ok') setTimeout(function(){el.className='status-msg';},3000);
 }
 
+window.onerror = function(message, source, lineno, colno, error){
+  console.error('JS error:', message, 'at line', lineno);
+};
 </script>
 </body>
 </html>
