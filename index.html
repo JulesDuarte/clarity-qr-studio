@@ -353,7 +353,7 @@ input[type=text]:focus,input[type=url]:focus{border-color:var(--green);backgroun
     </div>
     <div class="field-group">
       <span class="lbl">Your Vercel Base URL</span>
-      <input class="inp mono" id="vercel-base" placeholder="https://clarity-redirect.vercel.app" autocomplete="off">
+     <input class="inp mono" id="vercel-base" placeholder="https://clarity-redirect-eight.vercel.app" autocomplete="off">
     </div>
     <button class="action-btn primary" onclick="saveCredentials()">Save Credentials</button>
     <div class="status-msg" id="cred-status"></div>
@@ -949,20 +949,31 @@ function getSettings(){
 
 function updateSlugPreview(){
   var s=getSettings();
-  var base=document.getElementById('vercel-base').value.trim()||s.vercelBase||'https://your-redirect.vercel.app';
-  var slug=document.getElementById('qr-slug').value.trim();
-  document.getElementById('slug-preview').textContent=slug?base+'/'+slug:'—';
+  var base = document.getElementById('vercel-base').value.trim() || s.vercelBase || 'https://clarity-redirect-eight.vercel.app';
+  var slug = document.getElementById('qr-slug').value.trim();
+  document.getElementById('slug-preview').textContent = slug ? buildPublicQrUrl(base, slug) : '—';
+}
 }
 
 function saveCredentials(){
-  var url=document.getElementById('sb-url').value.trim();
-  var key=document.getElementById('sb-key').value.trim();
-  var vercel=document.getElementById('vercel-base').value.trim();
-  if(!url||!key){showStatus('cred-status','Enter both Supabase URL and key.','err');return;}
-  localStorage.setItem('clarity_sb_url',url);
-  localStorage.setItem('clarity_sb_key',key);
-  if(vercel) localStorage.setItem('clarity_vercel_base',vercel);
+  var url = document.getElementById('sb-url').value.trim();
+  var key = document.getElementById('sb-key').value.trim();
+  var vercel = normalizeBaseUrl(document.getElementById('vercel-base').value.trim());
+
+  if(!url || !key){
+    showStatus('cred-status','Enter both Supabase URL and key.','err');
+    return;
+  }
+
+  localStorage.setItem('clarity_sb_url', url);
+  localStorage.setItem('clarity_sb_key', key);
+  if(vercel){
+    localStorage.setItem('clarity_vercel_base', vercel);
+    document.getElementById('vercel-base').value = vercel;
+  }
+
   showStatus('cred-status','Saved ✓','ok');
+  updateSlugPreview();
   loadQRCodes();
 }
 
@@ -993,35 +1004,71 @@ async function sbFetch(path,opts,statusId){
 
 // ── Load all QR codes ──
 async function loadQRCodes(){
-  document.getElementById('qr-list').innerHTML='<div class="stats-empty">Loading…</div>';
-  var data=await sbFetch('clarity_qrcodes?order=created_at.desc',{},'qr-form-status');
-  if(!data){document.getElementById('qr-list').innerHTML='<div class="stats-empty">Could not load. Check credentials.</div>';return;}
-  if(data.length===0){document.getElementById('qr-list').innerHTML='<div class="stats-empty">No QR codes yet. Add one below.</div>';return;}
-  var s=getSettings();
-  var base=document.getElementById('vercel-base').value.trim()||s.vercelBase||'https://your-redirect.vercel.app';
-  var html=data.map(function(qr){
-    return '<div class="qr-card" id="card-'+qr.id+'">'+
-      '<div class="qr-card-header">'+
-        '<div>'+
-          '<div class="qr-card-name">'+escHtml(qr.name)+'</div>'+
-          '<div class="qr-card-slug">'+base+'/'+escHtml(qr.slug)+'</div>'+
-          '<div class="qr-card-dest">→ '+escHtml(qr.destination_url)+'</div>'+
-        '</div>'+
-        '<div class="qr-card-scans" onclick="toggleScans(\''+qr.id+'\',\''+escHtml(qr.slug)+'\')" style="cursor:pointer;" title="Click to see scans">'+
-          '<span id="scancount-'+qr.id+'">— scans</span>'+
-        '</div>'+
-      '</div>'+
-      '<div class="scan-list" id="scanlist-'+qr.id+'"></div>'+
-      '<div class="qr-card-actions">'+
-        '<button class="card-btn use" onclick="useQR(\''+base+'/'+escHtml(qr.slug)+'\')">Use in Design</button>'+
-        '<button class="card-btn edit" onclick="editQR(\''+qr.id+'\',\''+escHtml(qr.name)+'\',\''+escHtml(qr.slug)+'\',\''+escHtml(qr.destination_url)+'\')">Edit</button>'+
-        '<button class="card-btn del" onclick="deleteQR(\''+qr.id+'\')">Delete</button>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  document.getElementById('qr-list').innerHTML=html;
-  // Load scan counts
-  data.forEach(function(qr){ loadScanCount(qr.id, qr.slug); });
+  document.getElementById('qr-list').innerHTML = '<div class="stats-empty">Loading…</div>';
+
+  var data = await sbFetch('clarity_qrcodes?order=created_at.desc', {}, 'qr-form-status');
+  if(!data){
+    document.getElementById('qr-list').innerHTML = '<div class="stats-empty">Could not load. Check credentials.</div>';
+    return;
+  }
+
+  if(data.length === 0){
+    document.getElementById('qr-list').innerHTML = '<div class="stats-empty">No QR codes yet. Add one below.</div>';
+    return;
+  }
+
+  var s = getSettings();
+  var base = normalizeBaseUrl(document.getElementById('vercel-base').value.trim() || s.vercelBase || 'https://clarity-redirect-eight.vercel.app');
+  var list = document.getElementById('qr-list');
+  list.innerHTML = '';
+
+  data.forEach(function(qr){
+    var publicUrl = buildPublicQrUrl(base, qr.slug);
+
+    var card = document.createElement('div');
+    card.className = 'qr-card';
+    card.id = 'card-' + qr.id;
+
+    card.innerHTML =
+      '<div class="qr-card-header">' +
+        '<div>' +
+          '<div class="qr-card-name">' + escHtml(qr.name) + '</div>' +
+          '<div class="qr-card-slug">' + escHtml(publicUrl) + '</div>' +
+          '<div class="qr-card-dest">→ ' + escHtml(qr.destination_url) + '</div>' +
+        '</div>' +
+        '<div class="qr-card-scans" style="cursor:pointer;" title="Click to see scans">' +
+          '<span id="scancount-' + qr.id + '">— scans</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="scan-list" id="scanlist-' + qr.id + '"></div>' +
+      '<div class="qr-card-actions">' +
+        '<button class="card-btn use" type="button">Use in Design</button>' +
+        '<button class="card-btn edit" type="button">Edit</button>' +
+        '<button class="card-btn del" type="button">Delete</button>' +
+      '</div>';
+
+    list.appendChild(card);
+
+    card.querySelector('.qr-card-scans').addEventListener('click', function(){
+      toggleScans(qr.id, qr.slug);
+    });
+
+    card.querySelector('.card-btn.use').addEventListener('click', function(){
+      useQR(publicUrl);
+    });
+
+    card.querySelector('.card-btn.edit').addEventListener('click', function(){
+      editQR(qr.id, qr.name, qr.slug, qr.destination_url);
+    });
+
+    card.querySelector('.card-btn.del').addEventListener('click', function(){
+      deleteQR(qr.id);
+    });
+  });
+
+  data.forEach(function(qr){
+    loadScanCount(qr.id, qr.slug);
+  });
 }
 
 async function loadScanCount(id, slug){
@@ -1102,7 +1149,23 @@ async function deleteQR(id){
 }
 
 function escHtml(s){
-  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function normalizeBaseUrl(url){
+  return String(url || '').trim().replace(/\/+$/,'');
+}
+
+function buildPublicQrUrl(base, slug){
+  var cleanBase = normalizeBaseUrl(base);
+  var cleanSlug = String(slug || '').trim().replace(/^\/+/,'').replace(/\/+$/,'');
+  return cleanBase && cleanSlug ? cleanBase + '/' + cleanSlug : cleanBase || '—';
+}
+  
 }
 
 function showStatus(id,msg,type){
