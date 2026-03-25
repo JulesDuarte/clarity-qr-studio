@@ -964,7 +964,7 @@ function updateSlugPreview(){
   var base = document.getElementById('vercel-base').value.trim() || s.vercelBase || 'https://clarity-redirect-eight.vercel.app';
   var slug = document.getElementById('qr-slug').value.trim();
   document.getElementById('slug-preview').textContent = slug ? buildPublicQrUrl(base, slug) : '—';
-}
+
 }
 
 function saveCredentials(){
@@ -1176,7 +1176,6 @@ function buildPublicQrUrl(base, slug){
   var cleanBase = normalizeBaseUrl(base);
   var cleanSlug = String(slug || '').trim().replace(/^\/+/,'').replace(/\/+$/,'');
   return cleanBase && cleanSlug ? cleanBase + '/' + cleanSlug : cleanBase || '—';
-}
   
 }
 
@@ -1188,10 +1187,6 @@ function showStatus(id,msg,type){
   if(type==='ok') setTimeout(function(){el.className='status-msg';},3000);
 }
 
-</script
-  window.onerror = function(message, source, lineno, colno, error){
-  alert('JS error: ' + message + ' at line ' + lineno);
-};
-  >
+</script>
 </body>
 </html>
