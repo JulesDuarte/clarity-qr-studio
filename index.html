@@ -958,7 +958,7 @@ function updateSlugPreview(){
 function saveCredentials(){
   var url = document.getElementById('sb-url').value.trim();
   var key = document.getElementById('sb-key').value.trim();
-  var vercel = normalizeBaseUrl(document.getElementById('vercel-base').value.trim());
+  var vercel = document.getElementById('vercel-base').value.trim().replace(/\/+$/,'');
 
   if(!url || !key){
     showStatus('cred-status','Enter both Supabase URL and key.','err');
