@@ -1276,7 +1276,9 @@ document.getElementById('logo-shape-grid').addEventListener('click',function(e){
   S.logoShape=o.dataset.shape;
 });
 
-// ── QR Rendering Function ──
+// IMPROVED renderQR function with better logo zone handling
+// This replaces the existing renderQR function in PART-3
+
 function renderQR(canvas, matrix, dotColor, bgColor, dotStyle, cornerStyle, cornerSize, logoDataUrl, logoTint, logoShape, logoSizePct, logoSpaceMods, pad){
   return new Promise(function(resolve){
     var sz=canvas.width;
@@ -1297,10 +1299,19 @@ function renderQR(canvas, matrix, dotColor, bgColor, dotStyle, cornerStyle, corn
       return(r<fp&&c<fp)||(r<fp&&c>=n-fp)||(r>=n-fp&&c<fp);
     }
 
+    // IMPROVED: Calculate logo zone more conservatively
     var logoSzPre = logoDataUrl ? sz*(logoSizePct/100) : 0;
-    var clearRPre = logoDataUrl ? logoSzPre/2 + logoSpaceMods*mod : 0;
+    
+    // CRITICAL FIX: Add extra clearance for large logos
+    var baseClearance = logoSzPre/2 + logoSpaceMods*mod;
+    
+    // For large logos (>25%), add extra module clearance to avoid timing patterns
+    var extraClearance = logoSizePct > 25 ? mod * 2 : 0;
+    var clearRPre = logoDataUrl ? baseClearance + extraClearance : 0;
+    
     var lcx = sz/2, lcy = sz/2;
     var isRoundShape = (logoShape !== 'square');
+    
     function inLogoZone(dotX, dotY){
       if(!logoDataUrl) return false;
       if(isRoundShape){
@@ -1312,14 +1323,44 @@ function renderQR(canvas, matrix, dotColor, bgColor, dotStyle, cornerStyle, corn
       }
     }
 
+    // IMPROVED: Check if a dot is on critical timing patterns
+    function isTimingPattern(r, c){
+      // Horizontal timing pattern (row 6)
+      if(r === 6 && c > 7 && c < n-8) return true;
+      // Vertical timing pattern (column 6)
+      if(c === 6 && r > 7 && r < n-8) return true;
+      return false;
+    }
+
+    // IMPROVED: Check if dot is near alignment patterns
+    function isNearAlignment(r, c){
+      // For QR codes with alignment patterns, preserve them
+      // This is a simplified check - full implementation would use pattern table
+      var center = Math.floor(n/2);
+      var margin = 4;
+      
+      // Check if we're in the center region where alignment patterns appear
+      if(Math.abs(r - center) < margin && Math.abs(c - center) < margin){
+        return true;
+      }
+      return false;
+    }
+
     ctx.fillStyle=dotColor;
     for(var r=0;r<n;r++){
       for(var c=0;c<n;c++){
         if(!matrix[r][c])continue;
         if(isFP(r,c))continue;
+        
         var cx=pad+c*mod+mod/2;
         var cy=pad+r*mod+mod/2;
-        if(inLogoZone(cx,cy))continue;
+        
+        // CRITICAL: Never skip timing patterns or alignment patterns
+        // even if they're in the logo zone
+        var isCritical = isTimingPattern(r, c) || isNearAlignment(r, c);
+        
+        if(!isCritical && inLogoZone(cx,cy))continue;
+        
         var radius=mod*0.44;
         ctx.fillStyle=dotColor;
         dot(ctx,cx,cy,radius,dotStyle);
